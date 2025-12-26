@@ -54,9 +54,27 @@ summary.article_html
 
 summary.article_text
 #=>
-# Background: I’ve spent the past 6 years building web applications in Ruby and.....
+# Background: I've spent the past 6 years building web applications in Ruby and.....
 # ...
 # ... value in this article, it would mean a lot to me if you hit the recommend button!
+
+summary.article_markdown
+#=> Markdown version of the cleaned article
+
+summary.excerpt
+#=> "Article description or short excerpt"
+
+summary.site_name
+#=> "Medium"
+
+summary.lang
+#=> "en"
+
+summary.reading_time_min
+#=> 5
+
+summary.lead_image_url
+#=> "https://example.com/image.jpg"
 ```
 
 #### From raw html
@@ -92,20 +110,50 @@ html
 
 If the result is different from your expectations, you can add options to customize it.
 
-#### Example
+#### Example with Blacklist (Remove Paywalls/Ads)
 
 ```elixir
-url = "https://medium.com/@kenmazaika/why-im-betting-on-elixir-7c8f847b58"
-summary = Readability.summarize(url, [clean_conditionally: false])
+url = "https://example.com/article"
+opts = [
+  blacklist: [".paywall", ".ad-banner"],  # CSS selectors
+  text_blacklist: [~r/acessos por dia/i, ~r/assinante/i]  # Regex patterns for text content
+]
+summary = Readability.summarize(url, opts)
 ```
+
+#### Example with Custom Regexes
+
+```elixir
+# Extend unlikely_candidate regex to include Portuguese terms
+unlikely = Readability.regexes(:unlikely_candidate)
+new_unlikely = Regex.compile!(unlikely.source <> "|assinante", "i")
+
+opts = [regexes: [unlikely_candidate: new_unlikely]]
+summary = Readability.summarize(url, opts)
+```
+
+#### Available Options
 
 - `:min_text_length` \\\\ 25
 - `:remove_unlikely_candidates` \\\\ true
 - `:weight_classes` \\\\ true
 - `:clean_conditionally` \\\\ true
 - `:retry_length` \\\\ 250
+- `:blacklist` \\\\ nil - List of CSS selectors to remove (e.g., `[".paywall"]`)
+- `:text_blacklist` \\\\ nil - List of Regex patterns to remove nodes by text content
+- `:disable_json_ld` \\\\ false - Skip JSON-LD metadata extraction
 
 **You can find other algorithm and regex options in `readability.ex`**
+
+### New Features
+
+- **Markdown Support**: `summary.article_markdown` - Clean markdown version of the article
+- **JSON-LD Metadata**: Automatic extraction from Schema.org structured data
+- **Lead Image**: `summary.lead_image_url` - Extracted from og:image or JSON-LD
+- **Reading Time**: `summary.reading_time_min` - Estimated reading time (200 wpm)
+- **Text Direction**: `summary.dir` - Detects ltr/rtl
+- **Site Name & Language**: `summary.site_name`, `summary.lang`
+- **Blacklist Support**: Remove unwanted elements by CSS selector or text pattern
 
 ## Test
 
@@ -118,7 +166,12 @@ To run the test suite:
 - [x] Extract authors
 - [x] More configurable
 - [x] Summarize function
-- [ ] Convert relative paths into absolute paths of `img#src` and `a#href`
+- [x] Convert relative paths into absolute paths of `img#src` and `a#href`
+- [x] Markdown conversion support
+- [x] JSON-LD metadata extraction
+- [x] Lead image extraction
+- [x] Reading time calculation
+- [x] Blacklist support (CSS selectors and text patterns)
 
 ## Contributions are welcome!
 

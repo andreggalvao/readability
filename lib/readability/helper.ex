@@ -91,51 +91,56 @@ defmodule Readability.Helper do
     |> String.replace(Readability.regexes(:replace_brs, opts), "</p><p>")
     |> String.replace(Readability.regexes(:replace_fonts, opts), "<\\1span>")
     |> String.replace(Readability.regexes(:normalize, opts), " ")
-    |> transform_img_paths(opts)
     |> Floki.parse_document!()
     |> Floki.filter_out(:comment)
+    |> fix_relative_urls(opts)
     |> remove_tag(fn {tag, _, _} -> is_atom(tag) end)
   end
 
-  # Turn relative `img` tag paths into absolute if possible
-  defp transform_img_paths(html_str, opts) do
+  defp fix_relative_urls(html_tree, opts) do
     url = opts[:url] || opts[:page_url]
+
     if url do
-      Readability.regexes(:img_tag_src, opts)
-      |> Regex.replace(html_str, &build_img_path(url, &1, &2, &3, &4))
+      # Ensure base URL has scheme
+      base_url = ensure_absolute_url(url)
+
+      Floki.traverse_and_update(html_tree, fn
+        {"img", attrs, children} ->
+          {"img", update_attr(attrs, "src", base_url), children}
+
+        {"a", attrs, children} ->
+          {"a", update_attr(attrs, "href", base_url), children}
+
+        other ->
+          other
+      end)
     else
-      html_str
+      html_tree
     end
   end
 
-  defp build_img_path(url, _str, pre_src, src, post_src) do
-    new_src =
-      case URI.parse(src) do
-        %URI{host: nil} ->
-          base_url = base_url(url)
-          scrubbed_src = String.trim_leading(src, "/")
-
-          base_url <> "/" <> scrubbed_src
-
-        _ ->
-          src
-      end
-
-    pre_src <> new_src <> post_src
+  defp ensure_absolute_url(url) do
+    if URI.parse(url).scheme do
+      url
+    else
+      "http://" <> url
+    end
   end
 
-  # Get the base url of a given url, including its scheme.
-  # E.g: both http://elixir-lang.org/guides and elixir-lang.org/guides
-  # would return http://elixir-lang.org
-  defp base_url(url) do
-    scheme_regex = ~r/^(https?:\/\/)?(.*)/i
-    path_regex = ~r/^([^\/]+)(.*)/i
+  defp update_attr(attrs, attr_name, base_url) do
+    Enum.map(attrs, fn
+      {^attr_name, val} ->
+        {attr_name, make_absolute(val, base_url)}
+      other ->
+        other
+    end)
+  end
 
-    url_without_scheme = Regex.replace(scheme_regex, url, "\\2")
-    base_url = Regex.replace(path_regex, url_without_scheme, "\\1")
-
-    scheme = URI.parse(url).scheme || "http"
-
-    scheme <> "://" <> base_url
+  defp make_absolute(val, base_url) do
+    try do
+      URI.merge(base_url, val) |> to_string()
+    rescue
+      _ -> val
+    end
   end
 end

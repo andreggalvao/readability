@@ -41,6 +41,9 @@ defmodule Readability do
   alias Readability.ExcerptFinder
   alias Readability.SiteNameFinder
   alias Readability.LangFinder
+  alias Readability.DirFinder
+  alias Readability.ReadingTime
+  alias Readability.ImageFinder
 
   @default_options [
     retry_length: 250,
@@ -53,6 +56,7 @@ defmodule Readability do
     min_image_height: 80,
     ignore_image_format: [],
     blacklist: nil,
+    text_blacklist: nil,
     whitelist: nil,
     page_url: nil,
     disable_json_ld: false
@@ -100,17 +104,21 @@ defmodule Readability do
         html_tree = Helper.normalize(raw, opts)
         json_ld = if opts[:disable_json_ld], do: [], else: JSONLD.extract(html_tree)
         article_tree = ArticleBuilder.build(html_tree, opts)
+        article_text = readable_text(article_tree)
 
         %Summary{
           title: title(html_tree, json_ld),
           authors: authors(html_tree, json_ld),
           published_at: published_at(html_tree, json_ld),
           article_html: readable_html(article_tree, opts),
-          article_text: readable_text(article_tree),
+          article_text: article_text,
+          article_markdown: readable_markdown(article_tree),
           excerpt: ExcerptFinder.find(html_tree, json_ld),
           site_name: SiteNameFinder.find(html_tree, json_ld),
           lang: LangFinder.find(html_tree),
-          dir: nil # TODO: Implement DirFinder if needed
+          dir: DirFinder.find(html_tree),
+          reading_time_min: ReadingTime.calculate(article_text),
+          lead_image_url: ImageFinder.find(html_tree, json_ld)
         }
 
       _ ->
@@ -257,6 +265,16 @@ defmodule Readability do
   @spec raw_html(html_tree) :: binary
   def raw_html(html_tree) do
     html_tree |> Floki.raw_html(encode: false)
+  end
+
+  @doc """
+  Returns markdown string from `html_tree`.
+  """
+  @spec readable_markdown(html_tree) :: binary
+  def readable_markdown(html_tree) do
+    html_tree
+    |> raw_html()
+    |> Html2Markdown.convert()
   end
 
   @deprecated "Use `Floki.parse_document/1` or `Floki.parse_fragment/1` instead."

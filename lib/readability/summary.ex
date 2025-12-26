@@ -8,5 +8,8 @@ defmodule Readability.Summary do
             excerpt: nil,
             site_name: nil,
             lang: nil,
-            dir: nil
+            dir: nil,
+            reading_time_min: nil,
+            lead_image_url: nil,
+            article_markdown: nil
 end

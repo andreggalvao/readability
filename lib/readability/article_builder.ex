@@ -35,6 +35,11 @@ defmodule Readability.ArticleBuilder do
         else: html_tree
 
     html_tree =
+      if opts[:text_blacklist],
+        do: Cleaner.remove_text_blacklisted_nodes(html_tree, opts[:text_blacklist]),
+        else: html_tree
+
+    html_tree =
       if opts[:remove_unlikely_candidates],
         do: Cleaner.remove_unlikely_tree(html_tree, opts),
         else: html_tree
