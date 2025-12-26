@@ -30,11 +30,16 @@ defmodule Readability.ArticleBuilder do
       end)
 
     html_tree =
-      if opts[:remove_unlikely_candidates],
-        do: Cleaner.remove_unlikely_tree(html_tree),
+      if opts[:blacklist],
+        do: Cleaner.remove_blacklisted_nodes(html_tree, opts[:blacklist]),
         else: html_tree
 
-    html_tree = Cleaner.transform_misused_div_to_p(html_tree)
+    html_tree =
+      if opts[:remove_unlikely_candidates],
+        do: Cleaner.remove_unlikely_tree(html_tree, opts),
+        else: html_tree
+
+    html_tree = Cleaner.transform_misused_div_to_p(html_tree, opts)
 
     candidates =
       html_tree

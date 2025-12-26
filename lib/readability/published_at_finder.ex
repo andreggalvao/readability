@@ -10,16 +10,23 @@ defmodule Readability.PublishedAtFinder do
   @doc """
   Extract the published at.
   """
-  @spec find(html_tree) :: %DateTime{} | %Date{} | nil
-  def find(html_tree) do
+  @spec find(html_tree, list) :: %DateTime{} | %Date{} | nil
+  def find(html_tree, json_ld \\ []) do
     value =
-      Enum.find_value(@strategies, fn strategy ->
-        strategy(strategy, html_tree)
-      end)
+      find_in_json_ld(json_ld) ||
+        Enum.find_value(@strategies, fn strategy ->
+          strategy(strategy, html_tree)
+        end)
 
     if value do
       parse(value)
     end
+  end
+
+  defp find_in_json_ld(json_ld) do
+    Enum.find_value(json_ld, fn item ->
+      item["datePublished"] || item["dateCreated"]
+    end)
   end
 
   defp strategy(:meta_tag, html_tree) do

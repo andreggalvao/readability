@@ -21,17 +21,17 @@ defmodule Readability.Sanitizer do
     html_tree =
       html_tree
       |> Helper.remove_tag(&clean_headline_tag?(&1))
-      |> Helper.remove_tag(&clean_unlikely_tag?(&1))
+      |> Helper.remove_tag(&clean_unlikely_tag?(&1, opts))
       |> Helper.remove_tag(&clean_empty_p?(&1))
 
     if opts[:clean_conditionally] do
-      html_tree |> Helper.remove_tag(conditionally_cleaing_fn(candidates))
+      html_tree |> Helper.remove_tag(conditionally_cleaing_fn(candidates, opts))
     else
       html_tree
     end
   end
 
-  defp conditionally_cleaing_fn(candidates) do
+  defp conditionally_cleaing_fn(candidates, opts) do
     fn {tag, attrs, _} = tree ->
       if Enum.any?(["table", "ul", "div"], &(&1 == tag)) do
         weight = Scoring.class_weight(attrs)
@@ -58,7 +58,7 @@ defmodule Readability.Sanitizer do
             embed_len =
               tree
               |> Queries.find_tag("embed")
-              |> Enum.reject(&(&1 =~ Readability.regexes(:video)))
+              |> Enum.reject(&(&1 =~ Readability.regexes(:video, opts)))
               |> length
 
             link_density = Scoring.calc_link_density(tree)
@@ -72,7 +72,7 @@ defmodule Readability.Sanitizer do
             # too many links for its weight (#{weight})
             # <embed>s with too short a content length, or too many <embed>s
             img_len > p_len || (!list? && li_len > p_len) || input_len > p_len / 3 ||
-              (!list? && conent_len < Readability.regexes(:min_text_length) && img_len != 1) ||
+              (!list? && conent_len < Readability.regexes(:min_text_length, opts) && img_len != 1) ||
               (weight < 25 && link_density > 0.2) || (weight >= 25 && link_density > 0.5) ||
               ((embed_len == 1 && conent_len < 75) || embed_len > 1)
 
@@ -88,9 +88,9 @@ defmodule Readability.Sanitizer do
       (Scoring.class_weight(attrs) < 0 || Scoring.calc_link_density(html_tree) > 0.33)
   end
 
-  defp clean_unlikely_tag?({tag, attrs, _}) do
+  defp clean_unlikely_tag?({tag, attrs, _}, opts) do
     attrs_str = attrs |> Enum.map(&elem(&1, 1)) |> Enum.join("")
-    tag =~ ~r/form|object|iframe|embed/ && !(attrs_str =~ Readability.regexes(:video))
+    tag =~ ~r/form|object|iframe|embed/ && !(attrs_str =~ Readability.regexes(:video, opts))
   end
 
   defp clean_empty_p?({tag, _, _} = html_tree) do

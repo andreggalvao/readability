@@ -11,22 +11,33 @@ defmodule Readability.TitleFinder do
   @doc """
   Find proper title.
   """
-  @spec title(html_tree) :: binary
-  def title(html_tree) do
-    case og_title(html_tree) do
-      "" ->
-        title = tag_title(html_tree)
-        h_title = h_tag_title(html_tree)
+  @spec title(html_tree, list) :: binary
+  def title(html_tree, json_ld \\ []) do
+    case find_in_json_ld(json_ld) do
+      nil ->
+        case og_title(html_tree) do
+          "" ->
+            title = tag_title(html_tree)
+            h_title = h_tag_title(html_tree)
 
-        if good_title?(title) || h_title == "" do
-          title
-        else
-          h_title
+            if good_title?(title) || h_title == "" do
+              title
+            else
+              h_title
+            end
+
+          title when is_binary(title) ->
+            title
         end
-
-      title when is_binary(title) ->
+      title ->
         title
     end
+  end
+
+  defp find_in_json_ld(json_ld) do
+    Enum.find_value(json_ld, fn item ->
+      item["headline"]
+    end)
   end
 
   @doc """

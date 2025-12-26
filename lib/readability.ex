@@ -34,9 +34,13 @@ defmodule Readability do
   alias Readability.ArticleBuilder
   alias Readability.AuthorFinder
   alias Readability.Helper
+  alias Readability.Metadata.JSONLD
   alias Readability.PublishedAtFinder
   alias Readability.Summary
   alias Readability.TitleFinder
+  alias Readability.ExcerptFinder
+  alias Readability.SiteNameFinder
+  alias Readability.LangFinder
 
   @default_options [
     retry_length: 250,
@@ -50,25 +54,29 @@ defmodule Readability do
     ignore_image_format: [],
     blacklist: nil,
     whitelist: nil,
-    page_url: nil
+    page_url: nil,
+    disable_json_ld: false
   ]
 
-  @regexes [
-    unlikely_candidate:
-      ~r/combx|comment|community|disqus|extra|foot|header|hidden|lightbox|modal|menu|meta|nav|remark|rss|shoutbox|sidebar|sponsor|ad-break|agegate|pagination|pager|popup/i,
-    ok_maybe_its_a_candidate: ~r/and|article|body|column|main|shadow/i,
-    positive: ~r/article|body|content|entry|hentry|main|page|pagination|post|text|blog|story/i,
-    negative:
-      ~r/hidden|^hid|combx|comment|com-|contact|foot|footer|footnote|link|masthead|media|meta|outbrain|promo|related|scroll|shoutbox|sidebar|sponsor|shopping|tags|tool|utility|widget/i,
-    div_to_p_elements: ~r/<(a|blockquote|dl|div|img|ol|p|pre|table|ul)/i,
-    replace_brs: ~r/(<br[^>]*>[ \n\r\t]*){2,}/i,
-    replace_fonts: ~r/<(\/?)font[^>]*>/i,
-    replace_xml_version: ~r/<\?xml.*\?>/i,
-    normalize: ~r/\s{2,}/,
-    video: ~r/\/\/(www\.)?(dailymotion|youtube|youtube-nocookie|player\.vimeo)\.com/i,
-    protect_attrs: ~r/^(?!id|rel|for|summary|title|href|src|alt|srcdoc)/i,
-    img_tag_src: ~r/(<img.*src=['"])([^'"]+)(['"][^>]*>)/Ui
-  ]
+  defp regexes_map do
+    [
+      unlikely_candidate:
+        ~r/combx|comment|community|disqus|extra|foot|header|hidden|lightbox|modal|menu|meta|nav|remark|rss|shoutbox|sidebar|sponsor|ad-break|agegate|pagination|pager|popup/i,
+      ok_maybe_its_a_candidate: ~r/and|article|body|column|main|shadow/i,
+      positive: ~r/article|body|content|entry|hentry|main|page|pagination|post|text|blog|story/i,
+      negative:
+        ~r/hidden|^hid|combx|comment|com-|contact|foot|footer|footnote|link|masthead|media|meta|outbrain|promo|related|scroll|shoutbox|sidebar|sponsor|shopping|tags|tool|utility|widget/i,
+      div_to_p_elements: ~r/<(a|blockquote|dl|div|img|ol|p|pre|table|ul)/i,
+      replace_brs: ~r/(<br[^>]*>[ \n\r\t]*){2,}/i,
+      replace_fonts: ~r/<(\/?)font[^>]*>/i,
+      replace_xml_version: ~r/<\?xml.*\?>/i,
+      normalize: ~r/\s{2,}/,
+      video: ~r/\/\/(www\.)?(dailymotion|youtube|youtube-nocookie|player\.vimeo)\.com/i,
+      protect_attrs: ~r/^(?!id|rel|for|summary|title|href|src|alt|srcdoc)/i,
+      img_tag_src: ~r/(<img.*src=['"])([^'"]+)(['"][^>]*>)/Ui,
+      min_text_length: 25
+    ]
+  end
 
   @markup_mimes ~r/^(application|text)\/[a-z\-_\.\+]+ml(;\s*charset=.*)?$/i
 
@@ -89,15 +97,20 @@ defmodule Readability do
 
     case is_response_markup(headers) do
       true ->
-        html_tree = Helper.normalize(raw, url: url)
+        html_tree = Helper.normalize(raw, opts)
+        json_ld = if opts[:disable_json_ld], do: [], else: JSONLD.extract(html_tree)
         article_tree = ArticleBuilder.build(html_tree, opts)
 
         %Summary{
-          title: title(html_tree),
-          authors: authors(html_tree),
-          published_at: published_at(html_tree),
-          article_html: readable_html(article_tree),
-          article_text: readable_text(article_tree)
+          title: title(html_tree, json_ld),
+          authors: authors(html_tree, json_ld),
+          published_at: published_at(html_tree, json_ld),
+          article_html: readable_html(article_tree, opts),
+          article_text: readable_text(article_tree),
+          excerpt: ExcerptFinder.find(html_tree, json_ld),
+          site_name: SiteNameFinder.find(html_tree, json_ld),
+          lang: LangFinder.find(html_tree),
+          dir: nil # TODO: Implement DirFinder if needed
         }
 
       _ ->
@@ -149,14 +162,16 @@ defmodule Readability do
       "Some title in html"
 
   """
-  @spec title(binary | html_tree) :: binary
-  def title(raw_html) when is_binary(raw_html) do
+  @spec title(binary | html_tree, list) :: binary
+  def title(raw_html, json_ld \\ [])
+
+  def title(raw_html, json_ld) when is_binary(raw_html) do
     raw_html
     |> Floki.parse_document!()
-    |> title
+    |> title(json_ld)
   end
 
-  def title(html_tree), do: TitleFinder.title(html_tree)
+  def title(html_tree, json_ld), do: TitleFinder.title(html_tree, json_ld)
 
   @doc """
   Extract authors.
@@ -167,9 +182,10 @@ defmodule Readability do
       ["José Valim", "chrismccord"]
 
   """
-  @spec authors(binary | html_tree) :: list[binary]
-  def authors(html) when is_binary(html), do: html |> Floki.parse_document!() |> authors
-  def authors(html_tree), do: AuthorFinder.find(html_tree)
+  @spec authors(binary | html_tree, list) :: list[binary]
+  def authors(html, json_ld \\ [])
+  def authors(html, json_ld) when is_binary(html), do: html |> Floki.parse_document!() |> authors(json_ld)
+  def authors(html_tree, json_ld), do: AuthorFinder.find(html_tree, json_ld)
 
   @doc """
   Extract published_at
@@ -180,14 +196,15 @@ defmodule Readability do
       %DateTime{}
 
   """
-  @spec published_at(binary | html_tree) :: %DateTime{} | %Date{} | nil
-  def published_at(raw_html) when is_binary(raw_html) do
+  @spec published_at(binary | html_tree, list) :: %DateTime{} | %Date{} | nil
+  def published_at(raw_html, json_ld \\ [])
+  def published_at(raw_html, json_ld) when is_binary(raw_html) do
     raw_html
     |> Floki.parse_document!()
-    |> published_at()
+    |> published_at(json_ld)
   end
 
-  def published_at(html_tree), do: PublishedAtFinder.find(html_tree)
+  def published_at(html_tree, json_ld), do: PublishedAtFinder.find(html_tree, json_ld)
 
   @doc """
   Using a variety of metrics (content score, classname, element types), find the content that is
@@ -204,17 +221,17 @@ defmodule Readability do
     opts = Keyword.merge(@default_options, opts)
 
     raw_html
-    |> Helper.normalize()
+    |> Helper.normalize(opts)
     |> ArticleBuilder.build(opts)
   end
 
   @doc """
   Returns attributes, tags cleaned HTML.
   """
-  @spec readable_html(html_tree) :: binary
-  def readable_html(html_tree) do
+  @spec readable_html(html_tree, options) :: binary
+  def readable_html(html_tree, opts \\ []) do
     html_tree
-    |> Helper.remove_attrs(regexes(:protect_attrs))
+    |> Helper.remove_attrs(regexes(:protect_attrs, opts))
     |> raw_html
   end
 
@@ -249,7 +266,32 @@ defmodule Readability do
     end
   end
 
-  def regexes(key), do: @regexes[key]
+  def regexes(key, opts \\ []) do
+    overrides = Keyword.get(opts, :regexes, [])
+    config = Application.get_env(:readability, :regexes, [])
+
+    overrides[key] || config[key] || regexes_map()[key]
+  end
 
   def default_options, do: @default_options
+
+  @doc """
+  A quick-and-dirty way of figuring out if it's plausible that the contents of a given document are suitable for processing with Readability.
+  """
+  def is_probably_readerable(html_tree, opts \\ []) do
+    opts = Keyword.merge([
+      min_score: 20,
+      min_content_length: 140
+    ], opts)
+
+    # Simple heuristic based on text length of paragraphs
+    paragraphs = Floki.find(html_tree, "p")
+    text_length =
+      paragraphs
+      |> Enum.map(&Floki.text/1)
+      |> Enum.join(" ")
+      |> String.length()
+
+    text_length >= opts[:min_content_length]
+  end
 end

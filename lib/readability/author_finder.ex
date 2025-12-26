@@ -8,13 +8,28 @@ defmodule Readability.AuthorFinder do
   @doc """
   Extract authors.
   """
-  @spec find(html_tree) :: [binary]
-  def find(html_tree) do
-    author_names = find_by_meta_tag(html_tree)
+  @spec find(html_tree, list) :: [binary]
+  def find(html_tree, json_ld \\ []) do
+    author_names = find_by_json_ld(json_ld) || find_by_meta_tag(html_tree)
 
     if author_names do
       split_author_names(author_names)
     end
+  end
+
+  def find_by_json_ld(json_ld) do
+    Enum.find_value(json_ld, fn item ->
+      author = item["author"]
+      cond do
+        is_list(author) ->
+          names = Enum.map(author, &(&1["name"])) |> Enum.reject(&is_nil/1)
+          if Enum.empty?(names), do: nil, else: Enum.join(names, ", ")
+        is_map(author) ->
+          author["name"]
+        true ->
+          nil
+      end
+    end)
   end
 
   def find_by_meta_tag(html_tree) do

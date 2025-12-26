@@ -87,22 +87,25 @@ defmodule Readability.Helper do
   @spec normalize(binary, list) :: html_tree
   def normalize(raw_html, opts \\ []) do
     raw_html
-    |> String.replace(Readability.regexes(:replace_xml_version), "")
-    |> String.replace(Readability.regexes(:replace_brs), "</p><p>")
-    |> String.replace(Readability.regexes(:replace_fonts), "<\\1span>")
-    |> String.replace(Readability.regexes(:normalize), " ")
-    |> transform_img_paths(opts[:url])
+    |> String.replace(Readability.regexes(:replace_xml_version, opts), "")
+    |> String.replace(Readability.regexes(:replace_brs, opts), "</p><p>")
+    |> String.replace(Readability.regexes(:replace_fonts, opts), "<\\1span>")
+    |> String.replace(Readability.regexes(:normalize, opts), " ")
+    |> transform_img_paths(opts)
     |> Floki.parse_document!()
     |> Floki.filter_out(:comment)
     |> remove_tag(fn {tag, _, _} -> is_atom(tag) end)
   end
 
   # Turn relative `img` tag paths into absolute if possible
-  defp transform_img_paths(html_str, nil), do: html_str
-
-  defp transform_img_paths(html_str, url) do
-    Readability.regexes(:img_tag_src)
-    |> Regex.replace(html_str, &build_img_path(url, &1, &2, &3, &4))
+  defp transform_img_paths(html_str, opts) do
+    url = opts[:url] || opts[:page_url]
+    if url do
+      Readability.regexes(:img_tag_src, opts)
+      |> Regex.replace(html_str, &build_img_path(url, &1, &2, &3, &4))
+    else
+      html_str
+    end
   end
 
   defp build_img_path(url, _str, pre_src, src, post_src) do

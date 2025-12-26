@@ -44,12 +44,13 @@ defmodule Readability.Mixfile do
     [
       {:floki, "~> 0.24"},
       {:httpoison, "~> 1.8 or ~> 2.0"},
+      {:jason, "~> 1.2"},
       {:ex_doc, "~> 0.31", only: :dev},
       {:credo, "~> 1.6", only: [:dev, :test]},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:mock, "~> 0.3", only: :test},
       {:excoveralls, "~> 0.18", only: :test},
-      {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: test_watch_runtime}
+      {:mix_test_watch, "~> 1.3", only: [:dev, :test], runtime: test_watch_runtime}
     ] ++ List.wrap(html5ever_dep)
   end
 
